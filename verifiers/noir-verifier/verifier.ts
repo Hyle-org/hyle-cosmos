@@ -47,6 +47,7 @@ interface HyleOutput {
   next_state: number[];
   identity: string;
   tx_hash: number[];
+  index: number;
   payloads: number[];
   success: boolean;
 }
@@ -68,11 +69,19 @@ function parseArray(vector: string[]): number[] {
 }
 
 function parsePayload(vector: string[]): number[] {
-  let length = parseInt(vector.shift() as string);
-  let payload: string = "[";
+  let payloadLen = parseInt(vector.shift() as string);
+
+  // TODO: find solution to remove hardcoded value
+  let length = 2800;
+  let payload: string = "";
   for (var i = 0; i < length; i += 1)
-    payload += BigInt(vector.shift() as string).toString() + " ";
-  payload = payload.slice(0, -1) + "]"
+    if (i < payloadLen){
+      payload += BigInt(vector.shift() as string).toString() + " ";
+    }
+    else {
+      vector.shift()
+    }
+  payload = payload.slice(0, -1)
   return Array.from(new TextEncoder().encode(payload));
 }
 
@@ -83,6 +92,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   const next_state = parseArray(publicInputs);
   const identity = parseString(publicInputs);
   const tx_hash = parseArray(publicInputs);
+  const index = parseInt(publicInputs.shift() as string);
   const payloads = parsePayload(publicInputs);
   const success = parseInt(publicInputs.shift() as string) === 1;
   // We don't parse the rest, which correspond to programOutputs
@@ -92,6 +102,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
     next_state,
     identity,
     tx_hash,
+    index,
     payloads,
     success,
   };

@@ -18,13 +18,14 @@ pub struct HyleInput<T> {
 // This struct should be used as the output (public witness) of a Hyle smart contract.
 // The protocol enforces constraints on the non-generic fields.
 // See the documentation for details.
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct HyleOutput<T> {
     pub version: u32,
     pub initial_state: Vec<u8>,
     pub next_state: Vec<u8>,
     pub identity: String,
     pub tx_hash: Vec<u8>,
+    pub index: u32,
     pub payloads: Vec<u8>,
     pub success: bool,
     pub program_outputs: T,
