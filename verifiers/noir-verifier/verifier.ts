@@ -1,15 +1,28 @@
-import {
-  ProofData,
-  BarretenbergVerifier as Verifier,
-} from "@noir-lang/backend_barretenberg";
 import * as fs from "fs";
 import { parseArgs } from "util";
+import { spawn } from 'child_process';
 
-import { Crs } from "@aztec/bb.js";
+function runCommand(command: string, args: string[]) {
+  return new Promise<void>((resolve, reject) => {
+    const process = spawn(command, args);
 
-// This is used to work around an issue where having 0 points will download the full proving key (6gb file).
-// Doing this instead ensures we have a small file, while also hopefully not breaking with version changes.
-await Crs.new(1);
+    process.stdout.on('data', (data) => {
+      console.log(`Output: ${data}`);
+    });
+
+    process.stderr.on('data', (data) => {
+      console.error(`Error: ${data}`);
+    });
+
+    process.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Process exited with code ${code}`));
+      }
+});
+  });
+}
 
 const { values, positionals } = parseArgs({
   args: process.argv,
@@ -18,6 +31,9 @@ const { values, positionals } = parseArgs({
       type: "string",
     },
     proofPath: {
+      type: "string",
+    },
+    outputPath: {
       type: "string",
     },
   },
@@ -31,7 +47,8 @@ interface HyleOutput {
   next_state: number[];
   identity: string;
   tx_hash: number[];
-  payload_hash: number[];
+  index: number;
+  payloads: number[];
   success: boolean;
 }
 
@@ -51,25 +68,21 @@ function parseArray(vector: string[]): number[] {
   return resp;
 }
 
-function bigintToBytesArray(bigint: bigint): number[] {
-  const byteArray: number[] = [];
-  let tempBigInt = bigint;
+function parsePayloads(vector: string[]): number[] {
+  let payloadLen = parseInt(vector.shift() as string);
+  let payloadNumber = parseInt(vector.shift() as string);
+  let payload: string = "";
 
-  while (tempBigInt > 0n) {
-    const byte = Number(tempBigInt & 0xffn);
-    byteArray.push(byte);
-    tempBigInt >>= 8n;
+  for (let i = 0; i < payloadNumber; i++) {
+    let payloadSize = parseInt(vector.shift() as string);
+    payload += payloadSize.toString();
+    for (let j = 0; j < payloadSize; j++) {
+      let d: string = BigInt(vector.shift() as string).toString();
+      payload += " ";
+      payload += d;
+    }
   }
-
-  while (byteArray.length < 4) {
-    byteArray.push(0);
-  }
-
-  if (byteArray.length === 0) {
-    byteArray.push(0);
-  }
-
-  return byteArray.reverse();
+  return Array.from(new TextEncoder().encode(payload));
 }
 
 function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
@@ -79,49 +92,34 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   const next_state = parseArray(publicInputs);
   const identity = parseString(publicInputs);
   const tx_hash = parseArray(publicInputs);
-  const payload_hash = bigintToBytesArray(BigInt(publicInputs.shift()));
-  const success = parseInt(publicInputs.shift()) === 1;
+  const index = parseInt(publicInputs.shift() as string);
+  const payloads = parsePayloads(publicInputs);
+  const success = parseInt(publicInputs.shift() as string) === 1;
   // We don't parse the rest, which correspond to programOutputs
-
   return {
     version,
     initial_state,
     next_state,
     identity,
     tx_hash,
-    payload_hash,
+    index,
+    payloads,
     success,
   };
 }
 
-const proof = JSON.parse(
-  fs.readFileSync(values.proofPath, { encoding: "utf8" })
-);
-const vKey = fs.readFileSync(values.vKeyPath);
+const command = 'bash';
+const argsVerification = ['-c', `bb verify -p ${values.proofPath} -k ${values.vKeyPath}`];
+await runCommand(command, argsVerification);
+// Proof is considered valid
 
-const deserializedProofData: ProofData = {
-  proof: Uint8Array.from(proof.proof),
-  publicInputs: proof.publicInputs,
-};
+const argsProofAsFields = ['-c', `bb proof_as_fields -p ${values.proofPath} -k ${values.vKeyPath} -o ${values.outputPath}`];
+await runCommand(command, argsProofAsFields);
 
-// Verifying
-const verifier = new Verifier();
-const isValid = await verifier.verifyProof(deserializedProofData, vKey);
-if (isValid) {
-  const hyleOutput = deserializePublicInputs(
-    deserializedProofData.publicInputs
-  );
+let proofAsFields: string[] = JSON.parse(fs.readFileSync(values.outputPath));
+const hyleOutput = deserializePublicInputs(proofAsFields);
 
-  // bigint in json serialization is a pain in the ass :cry:
-  // Disgusting work around -> needs refacto.
-  var stringified_output = JSON.stringify(hyleOutput, (_, v) =>
-    typeof v === "bigint" ? "BIGINT_" + v.toString() + "_BIGINT" : v
-  );
-  stringified_output = stringified_output.replaceAll('"BIGINT_', "");
-  stringified_output = stringified_output.replaceAll('_BIGINT"', "");
+var stringified_output = JSON.stringify(hyleOutput);
 
-  process.stdout.write(stringified_output);
-  process.exit(0);
-} else {
-  process.exit(1);
-}
+process.stdout.write(stringified_output);
+process.exit(0);

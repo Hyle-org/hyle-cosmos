@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"os/exec"
 	"strings"
@@ -20,10 +19,7 @@ import (
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
 
-	"github.com/consensys/gnark-crypto/ecc/stark-curve/fp"
-	pedersenhash "github.com/consensys/gnark-crypto/ecc/stark-curve/pedersen-hash"
 	"github.com/consensys/gnark/backend/groth16"
-	gosha3 "golang.org/x/crypto/sha3"
 )
 
 type msgServer struct {
@@ -59,59 +55,24 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	return &msgServer{k: keeper}
 }
 
-// ParseCairoPayload parses cairo payload
-func ParseCairoPayload(payload []byte) []string {
-	elements := strings.Split(strings.Trim(string(payload), "[]"), " ")
-	var cairoPayload []string
-	for _, elem := range elements {
-		elem = strings.TrimSpace(elem)
-		if elem != "" {
-			cairoPayload = append(cairoPayload, elem)
+func hashPayloads(payloads []*zktx.Payload) ([]byte, error) {
+	var concatenatedData []byte
+
+	// Iterate over all payloads and append their Data fields to the slice
+	for _, payload := range payloads {
+		if payload != nil {
+			concatenatedData = append(concatenatedData, payload.Data...)
 		}
 	}
-	return cairoPayload
+	payloadsHash := sha256.Sum256(concatenatedData)
+
+	return payloadsHash[:], nil
 }
 
-// HashCairoPayload hashes cairo payload
-func HashCairoPayload(cairoPayload []string) (*big.Int, error) {
-	var inputsElements []*fp.Element
-	for i := 0; i < len(cairoPayload); i++ {
-		elem, err := new(fp.Element).SetString(cairoPayload[i])
-		if err != nil {
-			return nil, err
-		}
+func hashPayloadsFromProofs(payloads []byte) ([]byte, error) {
+	payloadsHash := sha256.Sum256(payloads)
 
-		inputsElements = append(inputsElements, elem)
-	}
-	pedersenHashedData := pedersenhash.PedersenArray(inputsElements...)
-	return pedersenHashedData.BigInt(new(big.Int)), nil
-}
-
-func computePayloadHash(verifier string, payloadData []byte) ([]byte, error) {
-	if verifier == "cairo" {
-		// Compute pedersen hash over payload.Data
-		cairoPayload := ParseCairoPayload(payloadData)
-		payloadHash, err := HashCairoPayload(cairoPayload)
-		if err != nil {
-			return nil, err
-		}
-		return payloadHash.Bytes(), nil
-
-	} else if verifier == "noir" {
-		// TODO: hash payloadData for noir
-		// ATM we use 0 as payloadHash for convenience
-		// Hence it is !mandatory! for the noir code to use 0 as payloadHash
-		return make([]byte, 4), nil
-	} else if verifier == "risczero" {
-		return payloadData, nil
-	} else if verifier == "gnark-groth16-te-BN254" {
-		hasher := gosha3.NewLegacyKeccak256()
-		if _, err := hasher.Write(payloadData); err != nil {
-			return nil, err
-		}
-		return hasher.Sum(nil), nil
-	}
-	return nil, fmt.Errorf("failed to hash payload: hash function not implemented for verifier %s", verifier)
+	return payloadsHash[:], nil
 }
 
 func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishPayloads) (*zktx.MsgPublishPayloadsResponse, error) {
@@ -138,6 +99,12 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 	ms.k.Timeout.Set(ctx, ctx.BlockHeight()+txTimeout, newTxs)
 
 	validIdentity := msg.Identity == ""
+
+	payloadsHash, err := hashPayloads(msg.Payloads)
+	if err != nil {
+		return nil, err
+	}
+
 	for i, payload := range msg.Payloads {
 		contract, err := ms.k.Contracts.Get(ctx, payload.ContractName)
 		if err != nil {
@@ -152,15 +119,9 @@ func (ms msgServer) PublishPayloads(goCtx context.Context, msg *zktx.MsgPublishP
 			}
 		}
 
-		// Compute payload hash
-		payloadHash, err := computePayloadHash(contract.Verifier, payload.Data)
-		if err != nil {
-			return nil, err
-		}
-
 		// Store enough metadata to check proofs later.
 		err = ms.k.ProvenPayload.Set(ctx, collections.Join(txHash, uint32(i)), zktx.PayloadMetadata{
-			PayloadHash:  payloadHash,
+			PayloadsHash: payloadsHash,
 			ContractName: payload.ContractName,
 			Identity:     msg.Identity,
 		})
@@ -238,8 +199,13 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, fmt.Errorf("verification failed: %w", err)
 	}
 
-	if !bytes.Equal(objmap.PayloadHash, payloadMetadata.PayloadHash) {
-		return nil, fmt.Errorf("proof is not related with correct payload hash")
+	payloadsHash, err := hashPayloadsFromProofs(objmap.Payloads)
+	if err != nil {
+		return nil, err
+	}
+
+	if !bytes.Equal(payloadsHash, payloadMetadata.PayloadsHash) {
+		return nil, fmt.Errorf("proof is not related with correct payloads hash")
 	}
 
 	if payloadMetadata.Identity != "" && objmap.Identity != payloadMetadata.Identity {
@@ -425,7 +391,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		//proofData = string(outBytes)
 	} else if contract.Verifier == "noir" {
 		// Save proof to a local file
-		err := os.WriteFile("/tmp/noir-proof.json", msg.Proof, 0644)
+		err := os.WriteFile("/tmp/noir-proof", msg.Proof, 0644)
 		if err != nil {
 			return fmt.Errorf("failed to write proof to file: %s", err)
 		}
@@ -438,7 +404,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		if err != nil {
 			return fmt.Errorf("failed to write vKey to file: %s", err)
 		}
-		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof.json").Output()
+		outBytes, err := exec.Command("bun", "run", noirVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/noir-vkey", "--proofPath", "/tmp/noir-proof", "--outputPath", "/tmp/noir-output").Output()
 		if err != nil {
 			return fmt.Errorf("noir verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
