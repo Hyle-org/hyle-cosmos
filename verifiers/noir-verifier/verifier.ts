@@ -71,18 +71,15 @@ function parseArray(vector: string[]): number[] {
 function parsePayloads(vector: string[]): number[] {
   let payloadLen = parseInt(vector.shift() as string);
   let payloadNumber = parseInt(vector.shift() as string);
-  let payload: string = payloadNumber.toString();
+  let payload: string = "";
 
   for (let i = 0; i < payloadNumber; i++) {
     let payloadSize = parseInt(vector.shift() as string);
-    if (i === 0) {
-      payload += " ";
-    }
     payload += payloadSize.toString();
     for (let j = 0; j < payloadSize; j++) {
       let d: string = BigInt(vector.shift() as string).toString();
       payload += " ";
-        payload += d;
+      payload += d;
     }
   }
   return Array.from(new TextEncoder().encode(payload));

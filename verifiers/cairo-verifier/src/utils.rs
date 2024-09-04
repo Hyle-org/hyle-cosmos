@@ -187,12 +187,9 @@ fn deserialize_cairo_bytesarray(data: &mut Vec<&str>) -> String {
 // Payload deserialization
 fn deserialize_cairo_payload(data: &mut Vec<&str>) -> Vec<u8> {
     let payload_number = data.remove(0).parse::<usize>().unwrap();
-    let mut payload: String = payload_number.to_string();
-    for i in 0..payload_number {
+    let mut payload: String = "".to_owned();
+    for _ in 0..payload_number {
         let payload_size = data.remove(0).parse::<usize>().unwrap();
-        if i == 0 {
-            payload.push_str(&" ");
-        }
         payload.push_str(&payload_size.to_string());
         for _ in 0..payload_size {
             let d: String = data.remove(0).into();
