@@ -185,33 +185,21 @@ fn deserialize_cairo_bytesarray(data: &mut Vec<&str>) -> String {
 }
 
 // Payload deserialization
-fn deserialize_cairo_payload(data: &mut Vec<&str>) -> (Vec<u8>, u32) {
-    // [
-    //     "1",                         --> index
-    //     "3",                         --> payloads_count
-    //         "2",                     --> payload_length
-    //             "1", "2",            --> payload_data
-    //         "1",                     --> payload_length
-    //             "1",                 --> payload_data
-    //         "4",                     --> payload_length
-    //             "1", "2", "3", "4"   --> payload_data
-    // ]
-    let index = data.remove(0).parse::<usize>().unwrap();
-    let payloads_count = data.remove(0).parse::<usize>().unwrap();
-    let mut payload: String = "".to_owned();
-    for i in 0..payloads_count {
-        let payload_length: usize = data.remove(0).parse::<usize>().unwrap();
-        for j in 0..payload_length {
+fn deserialize_cairo_payload(data: &mut Vec<&str>) -> Vec<u8> {
+    let payload_number = data.remove(0).parse::<usize>().unwrap();
+    let mut payload: String = payload_number.to_string();
+    for _ in 0..payload_number {
+        let payload_size = data.remove(0).parse::<usize>().unwrap();
+        payload.push_str(&" ");
+        payload.push_str(&payload_size.to_string());
+        for _ in 0..payload_size {
             let d: String = data.remove(0).into();
-            if i == index {
-                if j != 0 {
-                    payload.push_str(&" ");
-                }
-                payload.push_str(&d);
-            }
+            payload.push_str(&" ");
+            payload.push_str(&d);
         }
     }
-    return (payload.as_bytes().to_vec(), index.try_into().unwrap());
+    println!("payload: {:?}", payload);
+    return payload.as_bytes().to_vec();
 }
 
 /// Deserialize the output of the cairo smile-token contract.
@@ -228,8 +216,10 @@ fn deserialize_output(input: &str) -> HyleOutput<Vec<u8>> {
     let identity: String = deserialize_cairo_bytesarray(&mut parts);
     // extract tx_hash
     let tx_hash: String = parts.remove(0).parse().unwrap();
+    // extract index
+    let index: u32 = parts.remove(0).parse().unwrap();
     // extract payloads and index
-    let (payloads, index) = deserialize_cairo_payload(&mut parts);
+    let payloads = deserialize_cairo_payload(&mut parts);
     // extract success
     let success: bool = parts.remove(0).parse::<u32>().unwrap() == 1;
 
