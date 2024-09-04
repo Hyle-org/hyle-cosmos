@@ -68,20 +68,23 @@ function parseArray(vector: string[]): number[] {
   return resp;
 }
 
-function parsePayload(vector: string[]): number[] {
+function parsePayloads(vector: string[]): number[] {
   let payloadLen = parseInt(vector.shift() as string);
+  let payloadNumber = parseInt(vector.shift() as string);
+  let payload: string = payloadNumber.toString();
 
-  // TODO: find solution to remove hardcoded value
-  let length = 2800;
-  let payload: string = "";
-  for (var i = 0; i < length; i += 1)
-    if (i < payloadLen){
-      payload += BigInt(vector.shift() as string).toString() + " ";
+  for (let i = 0; i < payloadNumber; i++) {
+    let payloadSize = parseInt(vector.shift() as string);
+    if (i === 0) {
+      payload += " ";
     }
-    else {
-      vector.shift()
+    payload += payloadSize.toString();
+    for (let j = 0; j < payloadSize; j++) {
+      let d: string = BigInt(vector.shift() as string).toString();
+      payload += " ";
+        payload += d;
     }
-  payload = payload.slice(0, -1)
+  }
   return Array.from(new TextEncoder().encode(payload));
 }
 
@@ -93,7 +96,7 @@ function deserializePublicInputs<T>(publicInputs: string[]): HyleOutput {
   const identity = parseString(publicInputs);
   const tx_hash = parseArray(publicInputs);
   const index = parseInt(publicInputs.shift() as string);
-  const payloads = parsePayload(publicInputs);
+  const payloads = parsePayloads(publicInputs);
   const success = parseInt(publicInputs.shift() as string) === 1;
   // We don't parse the rest, which correspond to programOutputs
   return {
