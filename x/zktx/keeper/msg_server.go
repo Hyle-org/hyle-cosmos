@@ -209,41 +209,6 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 		return nil, err
 	}
 
-	// fileName := "/tmp/output.txt"
-	// file, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("Error opening or creating file:", err)
-
-	// }
-	// defer file.Close() // Ensure the file is closed after writing
-
-	// // Write data to the file
-	// _, err = file.Write(objmap.Payloads)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("Error writing to file:", err)
-
-	// }
-	// _, err = file.WriteString("\r\n")
-	// if err != nil {
-	// 	return nil, fmt.Errorf("Error writing to file:", err)
-
-	// }
-	// _, err = file.Write(payloadsHash)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("Error writing to file:", err)
-
-	// }
-	// _, err = file.WriteString("\r\n")
-	// if err != nil {
-	// 	return nil, fmt.Errorf("Error writing to file:", err)
-
-	// }
-	// _, err = file.Write(payloadMetadata.PayloadsHash)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("Error writing to file:", err)
-
-	// }
-
 	if !bytes.Equal(payloadsHash, payloadMetadata.PayloadsHash) {
 		return nil, fmt.Errorf("proof is not related with correct payloads hash")
 	}
@@ -503,8 +468,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
 			return fmt.Errorf("gnark groth16 verification failed on %s: %w", msg.ContractName, err)
 		}
-	} else if contract.Verifier == "snarkjs-groth16" { //circom
-		// Final step: actually check the proof here
+	} else if contract.Verifier == "snarkjs-groth16" {
 		// Save proof to a local file
 		var proof snark.HyleCircomProof
 		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
