@@ -33,6 +33,7 @@ var risczeroVerifierPath = os.Getenv("RISCZERO_VERIFIER_PATH")
 var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 var cairoVerifierPath = os.Getenv("CAIRO_VERIFIER_PATH")
+var snarkjVerifierPath = os.Getenv("SNARKJS_VERIFIER_PATH")
 
 var txTimeout = int64(1000)
 
@@ -52,6 +53,9 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	}
 	if cairoVerifierPath == "" {
 		cairoVerifierPath = "./target/release/cairo-verifier"
+	}
+	if snarkjVerifierPath == "" {
+		snarkjVerifierPath = "./verifiers/snarkjs-verifier"
 	}
 	return &msgServer{k: keeper}
 }
@@ -204,6 +208,41 @@ func (ms msgServer) PublishPayloadProof(goCtx context.Context, msg *zktx.MsgPubl
 	if err != nil {
 		return nil, err
 	}
+
+	// fileName := "/tmp/output.txt"
+	// file, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error opening or creating file:", err)
+
+	// }
+	// defer file.Close() // Ensure the file is closed after writing
+
+	// // Write data to the file
+	// _, err = file.Write(objmap.Payloads)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error writing to file:", err)
+
+	// }
+	// _, err = file.WriteString("\r\n")
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error writing to file:", err)
+
+	// }
+	// _, err = file.Write(payloadsHash)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error writing to file:", err)
+
+	// }
+	// _, err = file.WriteString("\r\n")
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error writing to file:", err)
+
+	// }
+	// _, err = file.Write(payloadMetadata.PayloadsHash)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error writing to file:", err)
+
+	// }
 
 	if !bytes.Equal(payloadsHash, payloadMetadata.PayloadsHash) {
 		return nil, fmt.Errorf("proof is not related with correct payloads hash")
@@ -505,19 +544,16 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		}
 
 		//execute snarkjs verify command
-		outBytes, err := exec.Command("snarkjs", "groth16", "verify", "/tmp/circom-vkey.json", "/tmp/circom-public-input.json", "/tmp/circom-proof.json").Output()
+		outBytes, err := exec.Command("bun", "run", snarkjVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/circom-vkey.json", "--publicInput", "/tmp/circom-public-input.json", "--proofPath", "/tmp/circom-proof.json", "--outputPath", "/tmp/circom-output").Output()
 
 		if err != nil {
 			return fmt.Errorf("snarkjs verifier failed on %s. Exit code: %s", msg.ContractName, err)
 		}
 
-		outputStr := string(outBytes)
-		if !strings.Contains(outputStr, "OK") {
-			return fmt.Errorf("failed to validate proof: %s", err)
+		err = json.Unmarshal(outBytes, &objmap)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal snarkjs verifier output: %s", err)
 		}
-
-		//get hyleOutput
-		*objmap = proof.HyleOutput
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
 	}

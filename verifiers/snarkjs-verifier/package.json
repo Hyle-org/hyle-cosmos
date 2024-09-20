@@ -1,0 +1,14 @@
+{
+    "name": "snarkjs-verifier",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "devDependencies": {
+        "@types/bun": "^1.1.0",
+        "@types/node": "^20.12.12",
+        "rollup-plugin-copy": "^3.5.0"
+    },
+    "dependencies": {
+        "bun": "^1.1.10"
+    }
+}

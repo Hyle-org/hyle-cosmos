@@ -1,0 +1,8 @@
+{
+  "name": "hyle-contract-circom",
+  "version": "1.0.0",
+  "license": "MIT",
+  "files": [
+  "./hyleOutput.circom"
+  ]
+}
