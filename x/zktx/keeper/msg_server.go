@@ -508,7 +508,7 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 		}
 
 		//execute snarkjs verify command
-		outBytes, err := exec.Command("bun", "run", snarkjVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/circom-vkey.json", "--publicInput", "/tmp/circom-public-input.json", "--proofPath", "/tmp/circom-proof.json", "--outputPath", "/tmp/circom-output").Output()
+		outBytes, err := exec.Command("bun", "run", snarkjVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/circom-vkey.json", "--publicInput", "/tmp/circom-public-input.json", "--proofPath", "/tmp/circom-proof.json").Output()
 
 		if err != nil {
 			return fmt.Errorf("snarkjs verifier failed on %s. Exit code: %s", msg.ContractName, err)

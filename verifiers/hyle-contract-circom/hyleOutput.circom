@@ -1,28 +1,37 @@
 pragma circom 2.1.6;
 
-template HyleOutput(v,init_size,init_value,next_state_size,idy_size,idy_value,tx_size,tx_value,idx,payload_size,payload_value,is_success) {
- 
-   signal input next_value[next_state_size];
+template HyleOutput(init_size,next_state_size,idy_size,tx_size,payload_size) {
+   //input signal
+   signal input version_input;
+   signal input initial_state_input[init_size];
+   signal input next_state_input[next_state_size];
+   signal input identity_input[idy_size];
+   signal input tx_hash_input[tx_size];
+   signal input index_input;
+   signal input payloads_input[payload_size];
+   signal input success_input;
 
-   signal output version;
-   signal output initial_state[init_size];
-   signal output next_state[next_state_size];
-   signal output identity[idy_size];
-   signal output tx_hash[tx_size];
-   signal output index;
-   signal output payloads[payload_size];
-   signal output success;
-   signal output length;
+   //output signal
+   signal output version_output;
+   signal output initial_state_output[init_size];
+   signal output next_state_output[next_state_size];
+   signal output identity_output[idy_size];
+   signal output tx_hash_output[tx_size];
+   signal output index_output;
+   signal output payloads_output[payload_size];
+   signal output success_output;
+   signal output length_output;
 
-   version <== v;
-   initial_state <== init_value;
-   next_state <== next_value;
+   version_output <== version_input;
+   initial_state_output <== initial_state_input;
+   next_state_output <== next_state_input;
    if (idy_size > 0)
-      identity <== idy_value;
-   tx_hash <== tx_value;
-   index <== idx;
-   payloads <== payload_value;
-   success <== is_success;
+      identity_output <== identity_input;
+   tx_hash_output <== tx_hash_input;
+   index_output <== index_input;
+   payloads_output <== payloads_input;
+   success_output <== success_input;
 
-   length <== init_size + next_state_size + idy_size + tx_size + payload_size + 8;
+   //length calculation
+   length_output <== init_size + next_state_size + idy_size + tx_size + payload_size + 8;
 }
