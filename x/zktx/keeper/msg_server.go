@@ -18,6 +18,7 @@ import (
 
 	"github.com/hyle-org/hyle/x/zktx"
 	"github.com/hyle-org/hyle/x/zktx/keeper/gnark"
+	"github.com/hyle-org/hyle/x/zktx/keeper/snark"
 
 	"github.com/consensys/gnark/backend/groth16"
 )
@@ -32,6 +33,7 @@ var risczeroVerifierPath = os.Getenv("RISCZERO_VERIFIER_PATH")
 var sp1VerifierPath = os.Getenv("SP1_VERIFIER_PATH")
 var noirVerifierPath = os.Getenv("NOIR_VERIFIER_PATH")
 var cairoVerifierPath = os.Getenv("CAIRO_VERIFIER_PATH")
+var snarkjVerifierPath = os.Getenv("SNARKJS_VERIFIER_PATH")
 
 var txTimeout = int64(1000)
 
@@ -51,6 +53,9 @@ func NewMsgServerImpl(keeper Keeper) zktx.MsgServer {
 	}
 	if cairoVerifierPath == "" {
 		cairoVerifierPath = "./target/release/cairo-verifier"
+	}
+	if snarkjVerifierPath == "" {
+		snarkjVerifierPath = "./verifiers/snarkjs-verifier"
 	}
 	return &msgServer{k: keeper}
 }
@@ -461,7 +466,57 @@ func extractProof(objmap *zktx.HyleOutput, contract *zktx.Contract, msg *zktx.Ms
 
 		// Final step: actually check the proof here
 		if err := groth16.Verify(g16p, vk, witness); err != nil {
-			return fmt.Errorf("groth16 verification failed on %s: %w", msg.ContractName, err)
+			return fmt.Errorf("gnark groth16 verification failed on %s: %w", msg.ContractName, err)
+		}
+	} else if contract.Verifier == "snarkjs-groth16" {
+		// Save proof to a local file
+		var proof snark.HyleCircomProof
+		if err := json.Unmarshal(msg.Proof, &proof); err != nil {
+			return fmt.Errorf("failed to unmarshal proof: %s", err)
+		}
+		circomProof, err := json.Marshal(proof.Proof)
+		if err != nil {
+			return fmt.Errorf("failed to extract proof: %s", err)
+		}
+
+		err = os.WriteFile("/tmp/circom-proof.json", circomProof, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to write circom proof to file: %s", err)
+		}
+		// Save vKey to a local file
+		f, err := os.Create("/tmp/circom-vkey.json")
+		if err != nil {
+			return fmt.Errorf("failed to create circom vKey file: %s", err)
+		}
+		_, err = f.Write(contract.ProgramId)
+		if err != nil {
+			return fmt.Errorf("failed to write circom vKey to file: %s", err)
+		}
+
+		// Save input to a local file
+		publicInput, err := json.Marshal(proof.PublicInput)
+		if err != nil {
+			return fmt.Errorf("failed to extract public input: %s", err)
+		}
+		f, err = os.Create("/tmp/circom-public-input.json")
+		if err != nil {
+			return fmt.Errorf("failed to create circom public input file: %s", err)
+		}
+		_, err = f.Write(publicInput)
+		if err != nil {
+			return fmt.Errorf("failed to write circom public input to file: %s", err)
+		}
+
+		//execute snarkjs verify command
+		outBytes, err := exec.Command("bun", "run", snarkjVerifierPath+"/verifier.ts", "--vKeyPath", "/tmp/circom-vkey.json", "--publicInput", "/tmp/circom-public-input.json", "--proofPath", "/tmp/circom-proof.json").Output()
+
+		if err != nil {
+			return fmt.Errorf("snarkjs verifier failed on %s. Exit code: %s", msg.ContractName, err)
+		}
+
+		err = json.Unmarshal(outBytes, &objmap)
+		if err != nil {
+			return fmt.Errorf("failed to unmarshal snarkjs verifier output: %s", err)
 		}
 	} else {
 		return fmt.Errorf("unknown verifier %s", contract.Verifier)
